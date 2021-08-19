@@ -1,2 +1,2 @@
-# GAN-Generator
-Generative Adversarial Network:  Optimization in Targeted Design
+# GAN-Drug-Generator
+GAN-Drug-Generator is an stududy over Generative Adversarial Network for Optimization in targeted drug design.
