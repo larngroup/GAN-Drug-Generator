@@ -557,7 +557,7 @@ if __name__ == "__main__" :
    
     
     vocab = Vocabulary('Vocab.txt')
-    #smiles = ['CC(N)C1CC1', 'C=C']
+ 
     
     vocab.update_vocab(smiles)
     tok = vocab.tokenize(smiles)
@@ -594,4 +594,6 @@ if __name__ == "__main__" :
     
     
     print(auto.sample_model.summary())
+    
+
     

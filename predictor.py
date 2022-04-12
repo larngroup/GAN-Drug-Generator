@@ -14,13 +14,22 @@ from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import csv
+from tokens import tokens_table
 
 from utils import regression_plot, denormalization_with_labels, reading_csv, transform_to_array
 from utils import mse, r_square,rmse,ccc
+import time
 
 class Predictor():
     def __init__(self, config, vocab, model_type, descriptor_type, property_identifier, load):
-        
+        self.dropout=0.3
+        self.path_predictor="predictor_weigths_"+property_identifier+"/"+property_identifier
+        token_table = tokens_table()
+        self.n_table=token_table.table_len
+        self.n_units=128
+        config.input_length=70
+        self.activation_rnn="relu"
+        self.activation_dense="linear"
         self.config = config
         self.vocab = vocab
         self.model_type = model_type
@@ -28,49 +37,25 @@ class Predictor():
         self.property_identifier = property_identifier # for example: kor
         self.load = load  #if False then the model is built, if True then the model is loaded
         
-        if load == False:
-            self.build_model()
-        elif load == True:
-            self.load_models()
-        
+        self.load_models()
         _,self.labels = reading_csv(config,property_identifier)
     
     def build_model(self):
         
+
+        my_model = Sequential()
+        my_model.add(Input(shape=(self.config.input_length,)))
+        my_model.add(Embedding(self.n_table, self.n_units,
+                                 input_length=self.config.input_length))
+        my_model.add(LSTM(self.n_units, return_sequences=True, input_shape=(
+            None, self.n_units, self.config.input_length), dropout=self.dropout))
+        my_model.add(LSTM(self.n_units, dropout=self.dropout))
+
+        my_model.add(Dense(self.n_units, activation=self.activation_rnn))
+        my_model.add(Dense(1, activation=self.config.activation_dense))
+
+        return my_model
         
-        if self.descriptor_type == 'SMILES':
-            self.model = Sequential()
-            self.model.add(Input(shape = (self.config.input_length+2,)))
-            self.model.add(Embedding(self.vocab.vocab_size, self.config.embedding_dim, input_length = self.config.input_length+2))
-            #self.model.add(Embedding(self.vocab.vocab_size, 256, input_length = self.config.input_length+2))
-            
-            if self.config.rnn == 'LSTM':
-                self.model.add(LSTM(self.config.n_units, return_sequences=True, dropout=self.config.dropout ))
-                self.model.add(LSTM(512, dropout = self.config.dropout))
-                
-            elif self.config.rnn == 'GRU':
-                self.model.add(GRU(self.config.n_units, return_sequences= True, dropout = self.config.dropout))
-                self.model.add(GRU(self.config.n_units,dropout = self.config.dropout))
-                
-                #do github
-#                 self.model.add(GRU(256, return_sequences=True, input_shape=(None,256,self.config.input_length),dropout = self.config.dropout))
-# #                self.model.add(GRU(self.n_units, return_sequences=True, dropout = self.dropout))
-#                 self.model.add(GRU(256,dropout = self.config.dropout))
-            
-#             self.model.add(Dense(256, activation='relu')) #
-            
-            self.model.add(Dense(self.config.n_units, activation = self.config.activation_rnn))
-            self.model.add(Dense(1, activation = self.config.activation_final))
-            
-        elif self.descriptor_type == 'context_vector':
-            
-            self.model = Sequential()
-            self.model.add(Input(shape = (self.config.input_shape_dense,)))
-            for units in self.config.units_dense:
-                self.model.add(Dense(units, activation = self.config.activation_dense))
-                self.model.add(Dropout(self.config.dropout_dense))
-            self.model.add(Dense(1, activation = self.config.activation_final))
-        #print(self.model.summary())
             
     def train_model(self, data, searchParam):
         self.data = data
@@ -82,8 +67,8 @@ class Predictor():
         
         opt = Adam(lr=self.config.lr, beta_1 =self.config.beta_1, beta_2 = self.config.beta_2, amsgrad = False)
         
-        es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=15, restore_best_weights=True)
-        mc = ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=1, save_best_only=True)
+        es = EarlyStopping(monitor='val_loss', mode='min', verbose=0, patience=15, restore_best_weights=True)
+        mc = ModelCheckpoint('best_model.h5', monitor='val_loss', mode='min', verbose=0, save_best_only=True)
         
         #self.model.compile(loss=self.config.loss_criterium, optimizer = opt,  metrics=['accuracy','AUC',specificity,sensitivity,matthews_correlation])
         #self.model.compile(loss='r', optimizer = opt,  metrics=['accuracy',specificity,sensitivity,matthews_correlation])
@@ -184,31 +169,19 @@ class Predictor():
     def load_models(self):
         
         loaded_models = []
+
         for i in range(5):
-            
-            if self.model_type == 'dnn':
-                try:
-                    json_file = open(self.config.checkpoint_dir + "model"+str(i)+self.descriptor_type +".json", 'r')
-                    loaded_model_json = json_file.read()
-                    json_file.close()
-                    loaded_model = model_from_json(loaded_model_json)
-                    # load weights into new model
-                    loaded_model.load_weights(self.config.checkpoint_dir + "model"+str(i)+".h5")
-                    
-                except:
-                    json_file = open('predictor_models_'+self.property_identifier + "/model"+str(i)+".json", 'r')
-                    loaded_model_json = json_file.read()
-                    json_file.close()
-                    loaded_model = model_from_json(loaded_model_json)
-                    # load weights into new model
-                    loaded_model.load_weights('predictor_models_'+self.property_identifier + "/model"+str(i)+".h5")
+            my_model=self.build_model()
+            my_model.load_weights(self.path_predictor+"model"+str(i)+".hdf5")
+
 
             print("Model " + str(i) + " loaded from disk!")
-            loaded_models.append(loaded_model)
-        
+            loaded_models.append(my_model)
+
         self.loaded_models = loaded_models
-    
- #   def predict(self, smiles, data):
+
+
+
      
     def evaluator(self,data):
        """
@@ -259,7 +232,7 @@ class Predictor():
         #smiles = np.asarray(self.vocab.encode(self.vocab.tokenize(smiles)))
         smiles = np.asarray(self.vocab.encode(smiles_tok))
         print('array smiles: ',smiles.shape)
-        
+        #print(smiles)
         for m in range(len(self.loaded_models)):
             prediction.append(self.loaded_models[m].predict(smiles))
                 
@@ -267,7 +240,7 @@ class Predictor():
         #print(self.labels)
         #prediction = denormalization(prediction,data)
         prediction = denormalization_with_labels(prediction,self.labels)
-        print('prediction')
-        prediction = np.mean(prediction, axis = 0)
         
+        prediction = np.mean(prediction, axis = 0)
+       
         return prediction, og_idx

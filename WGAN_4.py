@@ -18,6 +18,7 @@ import csv
 from matplotlib import pyplot as plt
 from utils import *
 import tqdm
+import time
 
 class WGANGP():
     def __init__(self, input_dim, critic_layers_units, critic_lr, critic_dropout, gp_weight, z_dim, generator_layers_units, generator_batch_norm_momentum, generator_lr, generator_dropout,batch_size, critic_optimizer, gen_optimizer):
@@ -196,6 +197,7 @@ class WGANGP():
             g_loss_per_batch = []
             batches_done = 0
             
+
             for i, batch in enumerate(self.data):
                 loss_d = self.train_critic(batch)
                 
@@ -248,7 +250,10 @@ class WGANGP():
         
         self.critic_loss = []
         self.g_loss = []
-            
+        
+        #TIme measuring
+        start=time.time()
+
         for epoch in range (self.epoch, self.epoch+epochs):
             
             #self.data = tf.data.Dataset.from_tensor_slices(x_train).batch(batch_size, drop_remainder = True).shuffle(buffer_size = x_train.shape[0])
@@ -260,7 +265,8 @@ class WGANGP():
             critic_loss_per_batch = []
             g_loss_per_batch = []
             batches_done = 0
-            
+            train_epoch_start=process_time()
+
             for i, batch in enumerate(self.data):
                 
                 loss_d = self.train_critic(batch)
@@ -297,7 +303,8 @@ class WGANGP():
                     #Sampling
                     gen_smiles, perc_valid, valid_generated_data = self.sample_valid_data(n_to_generate, run_folder, True)
 
-                    new_data, x_train_smiles, predictions = update_data_feedback_gan(x_train, x_train_smiles, gen_smiles, valid_generated_data, predictor, property_identifier, threshold, info)
+                    #new_data, x_train_smiles, predictions = update_data_feedback_gan(x_train, x_train_smiles, gen_smiles, valid_generated_data, predictor, property_identifier, threshold, info)
+                    new_data, x_train_smiles = update_data_feedback_gan_multi_obj(x_train, x_train_smiles, gen_smiles, valid_generated_data, predictor, property_identifier, threshold, info)
                     x_train = new_data
                     print('------------------------')
                     print(type(x_train_smiles))
@@ -308,11 +315,15 @@ class WGANGP():
                             writer.writerow(new_data[i])
                     
                     #save as csv
-                    with open(os.path.join(run_folder, "feedbackGAN_results.csv"), 'a') as f:
-                        writer = csv.writer(f)
-                        writer.writerow([self.epoch, np.max(predictions), np.mean(predictions), np.min(predictions), perc_valid])
+                    #with open(os.path.join(run_folder, "feedbackGAN_results.csv"), 'a') as f:
+                     #   writer = csv.writer(f)
+                     #   writer.writerow([self.epoch, np.max(predictions), np.mean(predictions), np.min(predictions), perc_valid])
             print(epoch)        
             self.epoch = self.epoch +1
+            end_epoch_time=process_time()
+            my_file = open("training_epoch_time.txt", "a")
+            my_string="Time spent {}, iteration {} \n".format(end_epoch_time-train_epoch_start,i)
+            my_file.write(my_string)
         #self.plot_loss(run_folder)
     
     
@@ -340,15 +351,20 @@ class WGANGP():
         return valid_smiles
 
     def sample_valid_data(self, n, run_folder, save):
+
         print('sampling data...')
         aux = n
         valid_smiles  = []
         valid_generated_data = []
         perc_valid = 0
-        while (aux > 0):
-            
+        train_epoch_start=process_time()
+        total_generated=0
+        
+        #while (aux <n):
+        temp=aux
+        while (temp >0):
             #if aux == n &&:
-            if self.epoch % 100 == 0: 
+            if self.epoch % 50 == 0 and self.epoch !=0: 
                 noise = np.random.uniform(-1,1,(1000, self.z_dim))       #generates noise vectors
                 generated_data = self.generator.predict(noise)      #generates fake data
                 print(generated_data)
@@ -363,14 +379,15 @@ class WGANGP():
                     valid_generated_data.append(generated_data[ind:ind+1])
                        
             else:
-                noise = np.random.uniform(-1,1,(aux, self.z_dim))       #generates noise vectors
+                noise = np.random.uniform(-1,1,(temp, self.z_dim))       #generates noise vectors
                 generated_data = self.generator.predict(noise)      #generates fake data
                 generated_smiles = []
                 for i in range(generated_data.shape[0]):            #transforms fake data into SMILES
                     sml = self.autoencoder.latent_to_smiles(generated_data[i:i+1], self.vocab)
                     generated_smiles.append(sml)
         
-                valid_smiles_aux, _, idx = validity(generated_smiles)
+                valid_smiles_aux, perc_valid, idx = validity(generated_smiles)
+                total_generated+=len(generated_smiles)
                 for ind in idx:
                     valid_generated_data.append(generated_data[ind:ind+1])
             
@@ -380,14 +397,28 @@ class WGANGP():
             if len(valid_smiles)>n:
                 valid_smiles = valid_smiles[0:n]
                 valid_generated_data = valid_generated_data[0:n]
-            aux = aux -len(valid_smiles)
+            #aux = len(valid_smiles)
+            temp = aux-len(valid_smiles)
+            
         
-        #if (save == True) and (self.epoch % 10 ==0): 
-           # with open(os.path.join(run_folder, "valid_1000_samples_epoch_%d_val_%0.2f.csv" % (self.epoch, perc_valid)), 'w') as f:
-           #     writer = csv.writer(f)
-            #    for i in range(len(valid_smiles)):
-            #        writer.writerow(valid_smiles[i])
-        return valid_smiles, perc_valid, valid_generated_data
+        if (save == True) and (self.epoch % 50 ==0): 
+            
+            perc_valid=(n/float(total_generated))*100.0
+            
+
+            with open(os.path.join(run_folder, "unbiased_valid_1000_samples_epoch_%d_val_%0.2f.csv" % (self.epoch, perc_valid)), 'w') as f:
+                writer = csv.writer(f)
+                for i in range(len(valid_smiles)):
+                    writer.writerow(valid_smiles[i])
+
+        print("Valid generated data")
+        print(valid_smiles)
+        end_epoch_time=process_time()
+        my_file = open("sampling_data.txt", "a")
+        my_string="Time spent {}, iteration {} \n".format(end_epoch_time-train_epoch_start,n)
+        my_file.write(my_string)
+
+        return valid_smiles, perc_valid, np.array(valid_generated_data)
         
     def save_model(self, run_folder):
      	#self.model.save(os.path.join(run_folder, 'model.h5'))

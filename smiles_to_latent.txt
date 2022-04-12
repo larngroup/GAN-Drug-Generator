@@ -1,0 +1,45 @@
+Model: "smiles_to_latent_model"
+__________________________________________________________________________________________________
+ Layer (type)                   Output Shape         Param #     Connected to                     
+==================================================================================================
+ encoder_inputs (InputLayer)    [(None, None)]       0           []                               
+                                                                                                  
+ embedding (Embedding)          (None, None, 256)    11520       ['encoder_inputs[0][0]']         
+                                                                                                  
+ bidirectional (Bidirectional)  [(None, None, 512),  1050624     ['embedding[0][0]']              
+                                 (None, 256),                                                     
+                                 (None, 256),                                                     
+                                 (None, 256),                                                     
+                                 (None, 256)]                                                     
+                                                                                                  
+ BN_0 (BatchNormalization)      (None, None, 512)    2048        ['bidirectional[0][0]']          
+                                                                                                  
+ bidirectional_1 (Bidirectional  [(None, 512),       1574912     ['BN_0[0][0]']                   
+ )                               (None, 256),                                                     
+                                 (None, 256),                                                     
+                                 (None, 256),                                                     
+                                 (None, 256)]                                                     
+                                                                                                  
+ concatenate (Concatenate)      (None, 2048)         0           ['bidirectional[0][1]',          
+                                                                  'bidirectional[0][2]',          
+                                                                  'bidirectional_1[0][1]',        
+                                                                  'bidirectional_1[0][2]',        
+                                                                  'bidirectional[0][3]',          
+                                                                  'bidirectional[0][4]',          
+                                                                  'bidirectional_1[0][3]',        
+                                                                  'bidirectional_1[0][4]']        
+                                                                                                  
+ BN_2 (BatchNormalization)      (None, 2048)         8192        ['concatenate[0][0]']            
+                                                                                                  
+ Dense_relu_latent_rep (Dense)  (None, 256)          524544      ['BN_2[0][0]']                   
+                                                                                                  
+ BN_latent_rep (BatchNormalizat  (None, 256)         1024        ['Dense_relu_latent_rep[0][0]']  
+ ion)                                                                                             
+                                                                                                  
+ Gaussian_Noise (GaussianNoise)  (None, 256)         0           ['BN_latent_rep[0][0]']          
+                                                                                                  
+==================================================================================================
+Total params: 3,172,864
+Trainable params: 3,167,232
+Non-trainable params: 5,632
+__________________________________________________________________________________________________

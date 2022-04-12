@@ -1,0 +1,35 @@
+Model: "states_to_smiles_model"
+__________________________________________________________________________________________________
+ Layer (type)                   Output Shape         Param #     Connected to                     
+==================================================================================================
+ decoder_inputs (InputLayer)    [(None, 70, 45)]     0           []                               
+                                                                                                  
+ Decoded_state_h_0 (InputLayer)  [(None, 512)]       0           []                               
+                                                                                                  
+ Decoded_state_c_0 (InputLayer)  [(None, 512)]       0           []                               
+                                                                                                  
+ Decoder_LSTM_0 (LSTM)          (None, 70, 512)      1142784     ['decoder_inputs[0][0]',         
+                                                                  'Decoded_state_h_0[0][0]',      
+                                                                  'Decoded_state_c_0[0][0]']      
+                                                                                                  
+ BN_decoder_0 (BatchNormalizati  (None, 70, 512)     2048        ['Decoder_LSTM_0[0][0]']         
+ on)                                                                                              
+                                                                                                  
+ Decoded_state_h_1 (InputLayer)  [(None, 512)]       0           []                               
+                                                                                                  
+ Decoded_state_c_1 (InputLayer)  [(None, 512)]       0           []                               
+                                                                                                  
+ Decoder_LSTM_1 (LSTM)          (None, 70, 512)      2099200     ['BN_decoder_0[0][0]',           
+                                                                  'Decoded_state_h_1[0][0]',      
+                                                                  'Decoded_state_c_1[0][0]']      
+                                                                                                  
+ BN_decoder_1 (BatchNormalizati  (None, 70, 512)     2048        ['Decoder_LSTM_1[0][0]']         
+ on)                                                                                              
+                                                                                                  
+ Decoder_Dense (Dense)          (None, 70, 45)       23085       ['BN_decoder_1[0][0]']           
+                                                                                                  
+==================================================================================================
+Total params: 3,269,165
+Trainable params: 3,267,117
+Non-trainable params: 2,048
+__________________________________________________________________________________________________

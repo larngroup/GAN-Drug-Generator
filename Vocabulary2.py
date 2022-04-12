@@ -114,7 +114,7 @@ class Vocabulary:
                         
             
             if len(smile_tok) == self.max_len:
-            #print(smile_tok)
+                print(smile_tok)
                 list_tok_smiles.append(smile_tok)
                 og_idx.append(idx)
             else:
@@ -140,6 +140,7 @@ class Vocabulary:
          for smile in tok_smiles:
              smile_idx = []
              for char in smile:
+                 #print(smile)
                  smile_idx.append(self.char_to_int[char])
              
              encoded_smiles.append(smile_idx)

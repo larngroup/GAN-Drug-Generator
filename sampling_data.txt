@@ -1,0 +1,6 @@
+Time spent 52.012974172, iteration 10 
+Time spent 346.592978413, iteration 20 
+Time spent 182.28863554400004, iteration 10 
+Time spent 68.128116431, iteration 10 
+Time spent 156.766525128, iteration 20 
+Time spent 167.878598036, iteration 10 

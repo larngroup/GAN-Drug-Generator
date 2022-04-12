@@ -20,11 +20,10 @@ from tensorflow.keras import backend as K
 from functools import reduce
 import pandas as pd
 import seaborn as sb
-from tqdm import tqdm
 
-from rdkit import Chem
 from rdkit.Chem import MolFromSmiles, AllChem, QED, Descriptors
 from rdkit import DataStructs
+from rdkit import Chem
 from rdkit.Chem.Draw import DrawingOptions
 from rdkit.Chem import Draw
 from rdkit.Chem import Descriptors
@@ -71,7 +70,7 @@ def secondsToStr(t):
 
 def uniqueness(smiles_list):
     
-    valid_smiles, _ , _= validity(smiles_list)
+    valid_smiles, _ , _ = validity(smiles_list)
 
     unique_smiles = list(set(valid_smiles))
     
@@ -349,7 +348,7 @@ def reading_csv(config,property_identifier):
         idx_smiles = 0
         idx_labels = 1
     elif property_identifier == 'a2d':
-        filepath = config.datapath_a2d
+        filepath = config.file_path_a2d
         idx_smiles = 0
         idx_labels = 1
     elif property_identifier == 'kor':
@@ -696,10 +695,7 @@ def qed_calculator(mols):
             q = QED.qed(mol)
             qed_values.append(q)
         except: 
-            print('unable to compute QED')
-            qed_values.append('NaN')
             pass
-
         
     return qed_values
 
@@ -716,41 +712,6 @@ def logPcalculator(list_smiles):
             
     return predictions
 
-def MW_calculator(mols):
-    """
-    Function that takes as input a list of Molecules and predicts the Molecular Wr«eight
-
-    Returns
-    -------
-    This function returns a list of molecular weights
-
-    """
-    mw_values = []
-    for mol in mols:
-        mw = Descriptors.MolWt(mol)
-        mw_values.append(mw)
-        
-    return mw_values
-    
-
-def evaluate_property(predictor, smiles, property_identifier):
-    
-    if property_identifier == 'qed':
-        qed_values = qed_calculator(smiles2mol(smiles))
-        return qed_values
-    elif property_identifier == 'kor':
-        kor_values, og_idx = predictor.predict(smiles)
-        return kor_values, og_idx
-    elif property_identifier == 'logP':
-        logP_values = logPcalculator(smiles)
-        return logP_values
-    elif property_identifier == 'sascore':
-        sascore = SAscore(smiles2mol(smiles))
-        return sascore
-    elif property_identifier == 'mw':
-        mw_values = MW_calculator(smiles2mol(smiles))
-        return mw_values
-    
 def smiles2mol(smiles_list):
     """
     Function that converts a list of SMILES strings to a list of RDKit molecules 
@@ -770,23 +731,152 @@ def smiles2mol(smiles_list):
             mol_list.append(mol)
     return mol_list
 
+def evaluate_property(predictor, smiles, property_identifier):
+    
+    if property_identifier == 'qed':
+        qed_values = qed_calculator(smiles)
+        return qed_values
+    elif property_identifier == 'kor' or property_identifier == 'a2d':
+        kor_values, og_idx = predictor.predict(smiles)
+        return kor_values, og_idx
+    elif property_identifier == 'logP':
+        logP_values = logPcalculator(smiles)
+        return logP_values
+    elif property_identifier == 'sascore':
+        sascore = SAscore(smiles2mol(smiles))
+        return sascore
+
+
+def update_data_feedback_gan_multi_obj(previous_data, previous_smiles, gen_smiles, gen_data, predictor, property_identifier, threshold, info):
+    # previous_data --> numpy array with latent vectors
+    # previous_smiles --> list with SMILES strings
+    # gen_smiles --> list with generated valid smiles strings
+    # gen_data --> numpy array with generated latent vectors
+    
+    print(' \n\n\n updateeeee \n\n\n\n')
+    
+    # LogP
+    logp = evaluate_property('', gen_smiles, 'logP')
+    print('\n\n\n\ log P \n\n\n\n')
+    aux_smiles = []
+    idx_save = []
+    for i in range(len(gen_smiles)):
+        if logp[i] <5 and logp[i] > 1:
+            aux_smiles.append(gen_smiles[i])
+            idx_save.append(i)
+    
+    gen_data_ = [gen_data[i] for i in idx_save]
+    gen_data = gen_data_
+    gen_smiles = aux_smiles
+    print(len(gen_smiles))
+    #SA score
+    print('\n\n\n\n SA scoer \n\n\n\n')
+    sascore = evaluate_property('', gen_smiles, 'sascore')
+    
+    aux_smiles = []
+    idx_save = []
+    for i in range(len(gen_smiles)):
+        if sascore[i] < 6:
+            aux_smiles.append(gen_smiles[i])
+            idx_save.append(i)
+    gen_data_ = [gen_data[i] for i in idx_save]
+    
+    gen_data = gen_data_
+    gen_smiles = aux_smiles
+    print("Smiles Before evaluation")
+    print(len(gen_smiles))
+    
+    # pIC50
+    print('\n\n\n\ PIC50 \n\n\n\n')
+    pIC50, og_idx= evaluate_property(predictor, gen_smiles, property_identifier)
+
+    #with open('pIC50_test3.csv', 'a') as f: 
+    #    write = csv.writer(f) 
+    #    write.writerow(pIC50) 
+
+
+
+
+
+    gen_smiles_2 = [gen_smiles[i] for i in og_idx] 
+    gen_smiles = gen_smiles_2
+    gen_data_ = [gen_data[i] for i in og_idx]
+    gen_data = gen_data_
+    
+    aux_smiles = []
+    idx_save = []
+    print("Gen Smiles")
+    print(gen_smiles)
+    for i in range(len(gen_smiles)):
+        print(pIC50[i])
+        if pIC50[i] > threshold:
+            aux_smiles.append(gen_smiles[i])
+            idx_save.append(i)
+            print("here")
+            print(aux_smiles)
+    gen_data_ = [gen_data[i] for i in idx_save]
+    gen_data = gen_data_
+    gen_smiles = aux_smiles
+    print(len(gen_smiles))
+    
+    # internal diversity   
+    print('\n\n\n\n internal diversity \n\n\n\n') 
+    divs = []
+    for sm in gen_smiles:
+        divs.append(diversity([sm], gen_smiles))
+    
+    #sort new data according to diversity
+    divs_array = np.array(divs)
+    inds = divs_array.argsort()
+    
+    sorted_gen_data = np.array(gen_data)[inds]
+    sorted_gen_smiles = list(np.array(gen_smiles)[inds])
+
+    # sort previous data according to pIC50
+    eval_previous_smiles, _ = evaluate_property(predictor, previous_smiles, property_identifier)
+    eval_previous_smiles_arr = np.array(eval_previous_smiles)
+    previous_smiles_arr = np.array(previous_smiles)
+    inds = eval_previous_smiles_arr.argsort()
+    
+    print(inds.shape)
+    print('previous_data', previous_data.shape)
+    print('gen_smiles', len(gen_smiles))
+    print(gen_smiles)
+    print("previous")
+    print(previous_data)
+    print("indices")
+    print(inds)
+    sorted_previous_data = previous_data[inds]
+    sorted_previous_smiles = list(previous_smiles_arr[inds])
+    
+    n = 20
+    if len(gen_smiles) <20:
+        n = len(sorted_gen_smiles)
+    
+    if info == 'max':
+        output = np.vstack((sorted_previous_data[n:sorted_previous_data.shape[0],:], np.squeeze(np.array(sorted_gen_data[len(sorted_gen_data)-n:len(sorted_gen_data)]))))
+        
+        output_smiles = sorted_previous_smiles[n:len(sorted_previous_smiles)]+ sorted_gen_smiles[len(sorted_gen_smiles)-n:len(sorted_gen_smiles)]
+    
+    print(output.shape)
+    print(len(output_smiles))
+    return output, output_smiles
+ 
 def update_data_feedback_gan(previous_data, previous_smiles, gen_smiles, valid_generated_data, predictor, property_identifier, threshold, info):
     # previous_data --> numpy array with latent vectors
     # previous_smiles --> list with SMILES strings
     # gen_smiles --> list with generated valid smiles strings
     # valid_generated_data --> numpy array with generated latent vectors
+    
     print('previous_Data', previous_data.shape)
     print('previous smiles', len(previous_smiles))
     # evaluate property using the Predictor
-    eval_gen_smiles, og_idx = evaluate_property(predictor,gen_smiles, property_identifier)
-    gen_smiles_2 = [gen_smiles[i] for i in og_idx] 
+    eval_smiles, og_idx = evaluate_property(predictor,gen_smiles, property_identifier)
+    gen_smiles_2 = [gen_smiles[i] for i in og_idx] #sort
     gen_smiles = gen_smiles_2
-    valid_generated_data_2 = [valid_generated_data[i] for i in og_idx]
-    valid_generated_data = valid_generated_data_2
+    sorted_new_data = [valid_generated_data[i] for i in og_idx]
     eval_previous_smiles, _ = evaluate_property(predictor, previous_smiles, property_identifier)
-    
-    
-    #sort previous smiles according to property
+    #sort data according to property
     
     eval_previous_smiles_arr = np.array(eval_previous_smiles)
     previous_smiles_arr = np.array(previous_smiles)
@@ -800,58 +890,62 @@ def update_data_feedback_gan(previous_data, previous_smiles, gen_smiles, valid_g
     sorted_previous_data = previous_data[inds]
     sorted_previous_smiles = list(previous_smiles_arr[inds])
     
-    #sort new smiles
-    eval_gen_smiles_arr = np.array(eval_gen_smiles)
-    gen_smiles_arr = np.array(gen_smiles)
-    inds = eval_gen_smiles_arr.argsort()
-    
-    sorted_gen_data = np.squeeze(np.array(valid_generated_data))[inds]
-    sorted_gen_smiles = list(gen_smiles_arr[inds])
-    
     initial_n = previous_data.shape[0]
     
     new_smiles =[]
-    #new_data = previous_data
-    idx_save = []    
-
+    new_data = previous_data
+    idx_save = []
     if info == 'max':
-        for idx, j in enumerate(eval_gen_smiles):
-            if sorted_gen_smiles[idx] not in sorted_previous_smiles:
-                idx_save.append(idx)
-                new_smiles.append(sorted_gen_smiles[idx]) # SMILES strings
+        #replacing 10 molecules (5 opercent of 200)
+        #eval_smiles_arr = np.array(eval_smiles)
+        #gen_smiles_arr = np.array(gen_smiles)
+        #inds = eval_smiles_arr.argsort()
+        #sorted_new_smiles = list(gen_smiles_arr[inds])
+        #sorted_new_data = valid_generated_data[inds]
         
-        sorted_new_data_ = [sorted_gen_data[i] for i in idx_save]  
+        #for idx, j in enumerate(eval_smiles):
+            #if j>threshold:
+            #    print('j> threshold')
+            #    if gen_smiles[idx] not in sorted_previous_smiles:
+            #    
+            #        new_smiles.append(gen_smiles[idx]) # SMILES strings
+            #        #print(valid_generated_data[idx:idx+1][0])
+            #        print(sorted_previous_data.shape)
+            #        sorted_previous_data = np.vstack((sorted_previous_data, np.array(valid_generated_data[idx:idx+1][0])))
+            #        print(sorted_previous_data.shape)
+        #n = len(new_smiles)
+        
+        for idx, j in enumerate(gen_smiles):
 
+            if gen_smiles[idx] not in sorted_previous_smiles:
+                idx_save.append(idx)
+                new_smiles.append(gen_smiles[idx]) # SMILES strings
+                #print(valid_generated_data[idx:idx+1][0])
+                #print(sorted_previous_data.shape)
+                #sorted_previous_data = np.vstack((sorted_previous_data, np.array(sorted_new_data[idx:idx+1][0])))
+                ##print(sorted_previous_data.shape)
+        sorted_new_data_ = [sorted_new_data[i] for i in idx_save]
         n = 20
         if len(new_smiles) <20:
-            n = len(new_smiles) 
-
+            n = len(new_smiles)
+        #output = np.vstack((sorted_previous_data[n:sorted_previous_data.shape[0],:], np.array(sorted_new_data[sorted_new_data.shape[0]-n:sorted_new_data.shape[0]][0])))
+        #output_smiles = sorted_previous_smiles[n:len(sorted_previous_smiles)] + sorted_new_smiles[len(sorted_new_smiles)-n:len(sorted_new_smiles)]
+        
         output = np.vstack((sorted_previous_data[n:sorted_previous_data.shape[0],:], np.squeeze(np.array(sorted_new_data_[len(sorted_new_data_)-n:len(sorted_new_data_)]))))
         
         output_smiles = sorted_previous_smiles[n:len(sorted_previous_smiles)]+ new_smiles[len(new_smiles)-n:len(new_smiles)]
-        
-        eval_smiles, og_idx = evaluate_property(predictor,new_smiles[len(new_smiles)-n:len(new_smiles)], property_identifier)
-
+                
     elif info == 'min':
-         print('min')
-        for idx, j in enumerate(eval_gen_smiles):
-            if sorted_gen_smiles[idx] not in sorted_previous_smiles:
-                idx_save.append(idx)
-                new_smiles.append(sorted_gen_smiles[idx]) # SMILES strings
-        #sorted_new_data_ = [sorted_new_data[i] for i in idx_save]      
-        sorted_new_data_ = [sorted_gen_data[i] for i in idx_save]   
-        #n = len(new_smiles) 
-        n = 20
-        if len(new_smiles) <20:
-            n = len(new_smiles) 
-            
-            
-        output = np.vstack((sorted_previous_data[0:sorted_previous_data.shape[0]-n,:], np.squeeze(np.array(sorted_new_data_[0:n]))))
-        
-        output_smiles = sorted_previous_smiles[0:len(sorted_previous_smiles)-n]+ new_smiles[0:n]  
-        eval_smiles, og_idx = evaluate_property(predictor,new_smiles[0:n], property_identifier)  
-        print('new predictions', eval_smiles)
-
+        for idx, j in enumerate(eval_smiles):
+            if j<threshold:
+                if gen_smiles[idx] not in sorted_previous_smiles:
+                    new_smiles.append(gen_smiles[idx])
+                    sorted_previous_data = np.vstack((sorted_previous_data, np.array(valid_generated_data[idx:idx+1][0])))
+                #new_data.append(valid_generated_data[idx:idx+1])
+        n = len(new_smiles)  
+        output = sorted_previous_data[0:sorted_previous_data.shape[0]-n,:]
+        output_smiles = new_smiles + sorted_previous_smiles[0:len(sorted_previous_smiles)-n]
+    
     print('novas moleculas:', n)
     print('output_data', output.shape)
     print('output_smiles', len(output_smiles))
@@ -861,6 +955,7 @@ def update_data_feedback_gan(previous_data, previous_smiles, gen_smiles, valid_g
     assert len(output_smiles) == output.shape[0]
     
     return output, output_smiles, predictions
+
 
 def plot_hist_both(prediction_unb,prediction_b, property_identifier):
     """
@@ -887,17 +982,15 @@ def plot_hist_both(prediction_unb,prediction_b, property_identifier):
     plot_title = ''
     
     
-    if property_identifier == 'jak2' or property_identifier == "kor":
+    if property_identifier == 'jak2' or property_identifier == "kor" or property_identifier=="a2d":
         legend_unb = 'Unbiased pIC50 values'
         legend_b = 'Biased pIC50 values'
         print("Max of pIC50: (UNB,B)", np.max(prediction_unb),np.max(prediction_b))
         print("Mean of pIC50: (UNB,B)", np.mean(prediction_unb),np.mean(prediction_b))
         print("Min of pIC50: (UNB,B)", np.min(prediction_unb),np.min(prediction_b))
-        print("Std of pIC50: (UNB, B)", np.std(prediction_unb), np.std(prediction_b))
     
         label = 'Predicted pIC50'
-        #plot_title = 'Distribution of predicted pIC50 for generated molecules'
-        plot_title = 'Distribution of predicted pIC50'
+        plot_title = 'Distribution of predicted pIC50 for generated molecules'
         
     elif property_identifier == "sas":
         legend_unb = 'Unbiased SA score values'
@@ -938,475 +1031,15 @@ def plot_hist_both(prediction_unb,prediction_b, property_identifier):
     v1 = pd.Series(prediction_unb, name=legend_unb)
     v2 = pd.Series(prediction_b, name=legend_b)
    
-    sb.set_palette("YlGnBu_r")
-    # ax = sb.kdeplot(v1, shade=True,color='b')
-    # sb.kdeplot(v2, shade=True,color='g')
-    ax = sb.kdeplot(v1, shade=True)
-    sb.kdeplot(v2, shade=True)
+    
+    ax = sb.kdeplot(v1, shade=True,color='b')
+    sb.kdeplot(v2, shade=True,color='r')
 
-    ax.set(xlabel=label,ylabel = 'Density', 
+    ax.set(xlabel=label, 
            title=plot_title)
-    plt.legend(loc='upper right', labels=[legend_unb, legend_b])
+    plt.legend(loc="best", labels=[legend_unb, legend_b])
     #plt.show()
     plt.savefig('Plot feedbackGAN')
-    plt.show()
     plt.close()
     
     return np.mean(prediction_b) - np.mean(prediction_unb)
-
-
-def plot_multiple_histograms(list_predictions, epochs, property_identifier):
-    """
-    
-
-    Parameters
-    ----------
-    list_predictions : List of lists
-        List with several lists that contain property predictions.
-        Each of these lists contains property predictions for a certain epoch
-             
-    property_identifier : String
-        String that identifies the property 
-
-    epochs : list
-        Contains the epochs corresponding to the lists in list_predictions
-    Returns
-    -------
-    None.
-
-    """
-    if property_identifier == 'kor':
-        plot_title = 'Distribution of predicted pIC50 of generated molecules'
-        plot_title = 'Distribution of predicted pIC50'
-        label = 'Predicted pIC50'
-    elif property_identifier == 'logP':
-        plot_title = 'Distribution of predicted logP of generated molecules'
-        label = 'Predicted logP'
-    elif property_identifier == 'sascore':
-        plot_title = 'Distribution of predicted SA score of generated molecules'
-        label = 'Predicted SA score'
-    elif property_identifier == 'mw':
-        plot_title = 'Distribution of predicted MW of generated molecules'
-        label = 'Predicted MW'
-    elif property_identifier == 'qed':
-        plot_title = 'Distribution of predicted QED of generated molecules'
-        label = 'Predicted QED'
-        
-    legends = []
-    sb.set_style("whitegrid")
-    
-    #palette = sb.husl_palette(6)
-    #sb.set_style("whitegrid")
-    #sb.set_palette("PuBu") #"YlGnBu  "YlOrRd" # "PuBu" "ocean" "YlOrBr"
-    sb.set_palette("YlGnBu")
-    
-    #colors = ['#225ea8', '#41b6c4', '#a1dab4', '#ffffcc']
-    
-    #v1 = pd.Series(np.array(list_predictions[0]), name='Unbiased')
-    v1 = pd.Series(np.array(list_predictions[0]), name=str(epochs[0]))
-    legends.append('Unbiased')
-    #legends.append(str(epochs[0]))
-    ax = sb.kdeplot(v1, shade=True)
-    #ax = sb.kdeplot(v1, shade=True, color = colors[0])
-    for i in range(1,len(list_predictions)):
-        v = pd.Series(np.array(list_predictions[i]), name='Epoch ' +str(epochs[i]))
-        legends.append('Epoch ' +str(epochs[i]))
-        #legends.append(str(epochs[i]))
-        #sb.kdeplot(v, shade=True, color =colors[1])
-        sb.kdeplot(v, shade=True)
-        
-    ax.set(xlabel=label,ylabel = 'Density', 
-           title=plot_title)
-    plt.legend(loc='upper right', labels=legends)
-    plt.savefig('feedbackGAN_multiple_hist.png')
-    plt.show()
-    plt.close()
-    
-
-def drawMols(smiles, n_to_draw, info, property_identifier, predictor):
-    """
-    Function that draws chemical structure of the compounds generated by the optimized
-    model.
-
-    Parameters:
-    -----------
-    smiles: list with smiles strings
-    n_to_draw: number of molecules to draw
-    info: which molecules to draw ('random', 'max', 'min')
-    property_identifier: main property of the experiment ('kor', 'QED')
-    predictor: object that has .predict fucntion
-
-    Returns
-    -------
-    This function returns a figure with the specified number of molecular 
-    graphs indicating the pIC50 for KOR and the QED receptors.
-    """
-    DrawingOptions.atomLabelFontSize = 50
-    DrawingOptions.dotsPerAngstrom = 100
-    DrawingOptions.bondLineWidth = 3
-              
-    
-    # Elimina os compostos repetidos
-    unique_smiles = list(np.unique(smiles))[1:]
-    
-    # prediction pIC50 KOR
-    prediction_kor, og_idx = evaluate_property(predictor, unique_smiles, property_identifier)
-    smiles = [unique_smiles[i] for i in og_idx]
-    
-    predictions_logP = evaluate_property(predictor, smiles, 'logP' )
-    predictions_sascore = evaluate_property(predictor,smiles, 'sascore')
-    predictions_QED = evaluate_property(predictor, smiles, 'qed')
-    predictions_mw = evaluate_property(predictor, smiles, 'mw')
-    
-    
-    mol_list = [Chem.MolFromSmiles(sm) for sm in smiles]
-    #img = Draw.MolsToGridImage(mol_list)
-    
-    if info == 'random':
-        # seleciona um numero previamente definido de moléculas (n_to_draw) para representar aleatoriamente
-        ind = np.random.randint(0, len(smiles), n_to_draw)
-        mols_to_draw = [mol_list[i] for i in ind]
-        # coloca na legenda as propriedades desejadas para cada molécula
-        legends = []
-        for i in ind:
-            legends.append('pIC50 for KOR: ' + str(round(prediction_kor[i],2))+ ' QED: ' + str(round(predictions_QED[i], 2)) + '\n logP: ' + str(round(predictions_logP[i], 2)) + ' SAscore: ' + str(round(predictions_sascore[i], 2)) + ' MW: ' + str(round(predictions_mw[i], 2)))
-        
-    else:
-        
-        
-        prediction_kor_arr = np.array(prediction_kor)
-        inds = prediction_kor_arr.argsort()
-        mol_list_arr = np.array(mol_list)
-        smiles_arr = np.array(smiles)
-        
-        sorted_mol_list = list(mol_list_arr[inds])
-        sorted_smiles_list = list(smiles_arr[inds])
-        l = len(sorted_mol_list)
-
-        legends = []
-        mols_to_draw = []
-        if info == 'max':
-            for i in range(n_to_draw):
-                mols_to_draw.append(sorted_mol_list[l-i-1])
-                prediction_kor, _ = evaluate_property(predictor, [sorted_smiles_list[l-i-1]], property_identifier)
-                prediction_QED = evaluate_property(predictor, [sorted_smiles_list[l-i-1]], 'qed')
-                prediction_logP = evaluate_property(predictor, [sorted_smiles_list[l-i-1]], 'logP')
-                prediction_sascore = evaluate_property(predictor, [sorted_smiles_list[l-i-1]], 'sascore')
-                prediction_mw = evaluate_property(predictor, [sorted_smiles_list[l-i-1]], 'mw')
-                legends.append('pIC50 for KOR: ' + str(round(prediction_kor[0],2))+ ' QED: ' + str(round(prediction_QED[0], 2)) + '\n logP: ' + str(round(prediction_logP[0], 2)) + ' SAscore: ' + str(round(prediction_sascore[0], 2)) +' MW: ' + str(round(prediction_mw[0], 2)))
-                
-        elif info == 'min':
-            for i in range(n_to_draw):
-                mols_to_draw.append(sorted_mol_list[i])
-                prediction_kor, _ = evaluate_property(predictor, [sorted_smiles_list[i]], property_identifier)
-                prediction_QED = evaluate_property(predictor, [sorted_smiles_list[i]], 'qed')
-                prediction_logP = evaluate_property(predictor, [sorted_smiles_list[i]], 'logP')
-                prediction_sascore = evaluate_property(predictor, [sorted_smiles_list[i]], 'sascore')
-                prediction_mw = evaluate_property(predictor, [sorted_smiles_list[i]], 'mw')
-                legends.append('pIC50 for KOR: ' + str(round(prediction_kor[0],2))+ ' QED: ' + str(round(prediction_QED[0], 2)) + '\n logP: ' + str(round(prediction_logP[0], 2)) + ' SAscore: ' + str(round(prediction_sascore[0], 2))+ ' MW: '+ str(round(prediction_mw[0], 2)))
-        
-    
-    
-    
-    img = Draw.MolsToGridImage(mols_to_draw, molsPerRow=5, subImgSize=(300,300), legends=legends,returnPNG=False)
-    img.save('mols_info_'+info+'_.png')
-    img = Draw.MolsToGridImage(mols_to_draw, molsPerRow=5, subImgSize=(300,300),returnPNG=False)
-    img.save('mols_'+info+'.png')
-
-
-def plot_QED_vs_SAscore(smiles):
-    """
-    Plots the QED values on the y-axis and the SAscore on the x-axis for the molecules in "SMILES"
-
-    Parameters
-    ----------
-    smiles :list
-        lsit with SMILES strings
-
-    Returns
-    -------
-    None.
-
-    """
-    sb.set_palette("YlGnBu_r")
-    sb.set_style("whitegrid")
-    print(len(smiles))
-    prediction_QED = evaluate_property('', smiles, 'qed')
-    prediction_sascore = evaluate_property('', smiles, 'sascore')
-    idx_rem = []
-    for i in range(len(prediction_QED)):
-        if prediction_QED[i] == 'NaN':
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        prediction_QED.pop(idx)
-        prediction_sascore.pop(idx)
-    #prediction_logP = evaluate_property('', smiles, 'logP')
-    
-    print(len(prediction_sascore))
-    ax = sb.jointplot( prediction_sascore, prediction_QED, xlim = (0,10), ylim = (0,1), joint_kws={"s": 10})
-    
-    ax.set_axis_labels('SA score', 'QED', fontsize = 20)
-    
-    # plt.xlim(0,10.0)
-    # plt.ylim(0,1.0)
-    plt.savefig('feedbackGAN_QED_vs_SAscore.png')
-    
-def plot_QED_vs_SAscore_multi(smiles_1,smiles_2):
-    """
-    Plots the QED values on the y-axis and the SAscore on the x-axis for the molecules in "SMILES"
-
-    Parameters
-    ----------
-    smiles :list
-        lsit with SMILES strings
-
-    Returns
-    -------
-    None.
-
-    """
-    
-    # check if the smiles can be parsed into molecules by rdkit
-    idx_rem  =[]
-    for i,sm in enumerate(smiles_1):
-        if Chem.MolFromSmiles(sm, sanitize=True) == None:
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        smiles_1.pop(idx)
-
-    idx_rem  =[]
-    for i,sm in enumerate(smiles_2):
-        if Chem.MolFromSmiles(sm, sanitize=True) == None:
-            idx_rem.append()
-    
-    for idx in (idx_rem):
-        smiles_2.pop(idx)
-    
-    
-    prediction_QED_1 = evaluate_property('', smiles_1, 'qed')
-    prediction_sascore_1 = evaluate_property('', smiles_1, 'sascore')
-    
-    print(len(prediction_sascore_1))
-    print(len(prediction_QED_1))
-    idx_rem = []
-    for i in range(len(prediction_QED_1)):
-        if prediction_QED_1[i] == 'NaN':
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        prediction_QED_1.pop(idx)
-        prediction_sascore_1.pop(idx)
-    #prediction_logP = evaluate_property('', smiles, 'logP')
-
-    assert len(prediction_QED_1) == len(prediction_sascore_1)
-    
-    prediction_QED_2 = evaluate_property('', smiles_2, 'qed')
-    prediction_sascore_2 = evaluate_property('', smiles_2, 'sascore')
-    idx_rem = []
-    for i in range(len(prediction_QED_2)):
-        if prediction_QED_2[i] == 'NaN':
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        prediction_QED_2.pop(idx)
-        prediction_sascore_2.pop(idx)
-    assert len(prediction_QED_2) == len(prediction_sascore_2)
-    
-    #label = np.squeeze(np.concatenate((np.ones((1, len(prediction_QED_1))), 2*np.ones((1, len(prediction_QED_2)))), axis = 1))
-    label = ['Original Data' for i in range(len(prediction_QED_1))] + ['Generated Data' for i in range(len(prediction_QED_2))]
-    pred_sascore = prediction_sascore_1 + prediction_sascore_2
-    pred_QED = prediction_QED_1 + prediction_QED_2
-    
-    print(len(label))
-    print(len(pred_sascore))
-    print(len(pred_QED))
-    d1 = {'Label':label, 'SA score': pred_sascore, 'QED':pred_QED}
-    v1 = pd.DataFrame(d1)
-    sb.set_palette("YlGnBu")
-    ax = sb.relplot(data = v1, x = 'SA score', y= 'QED', hue = 'Label', palette = "YlGnBu_r", s=15)
-    #sb.relplot(prediction_sascore_2, prediction_QED_2, xlim = (0,10), ylim = (0,1), joint_kws={"s": 10})
-    ax.set(xlim = (0,10), ylim = (0,1))
-    #ax.set_axis_labels('SA score', 'QED')
-    #legends = ['Original data', 'Generated data']
-    #plt.legend(loc='upper right', labels=legends)
-    # plt.xlim(0,10.0)
-    # plt.ylim(0,1.0)
-    plt.savefig('feedbackGAN_QED_vs_SAscore_multi.png')
-    
-    
-def plot_logP_vs_MW(smiles):
-    """
-    Plots the logP values on the y-axis and the MW on the x-axis for the molecules in "SMILES"
-
-    Parameters
-    ----------
-    smiles :list
-        lsit with SMILES strings
-
-    Returns
-    -------
-    None.
-
-    """
-    sb.set_palette("YlGnBu_r")
-    sb.set_style("whitegrid")
-    print(len(smiles))
-    prediction_logP = evaluate_property('', smiles, 'logP')
-    prediction_MW = evaluate_property('', smiles, 'mw')
-    # idx_rem = []
-    # for i in range(len(prediction_QED)):
-    #     if prediction_QED[i] == 'NaN':
-    #         idx_rem.append(i)
-    
-    # for idx in (idx_rem):
-    #     prediction_QED.pop(idx)
-    #     prediction_sascore.pop(idx)
-    #prediction_logP = evaluate_property('', smiles, 'logP')
-    
-    #print(len(prediction_sascore))
-    ax = sb.jointplot( prediction_MW, prediction_logP,  joint_kws={"s": 10})
-    
-    ax.set_axis_labels('MW', 'LogP', fontsize = 20)
-    
-    # plt.xlim(0,10.0)
-    # plt.ylim(0,1.0)
-    plt.savefig('feedbackGAN_QED_vs_SAscore.png')
-
-def plot_logP_vs_MW_multi(smiles_1,smiles_2):
-    """
-    Plots the QED values on the y-axis and the SAscore on the x-axis for the molecules in "SMILES"
-
-    Parameters
-    ----------
-    smiles :list
-        lsit with SMILES strings
-
-    Returns
-    -------
-    None.
-
-    """
-    
-    # check if the smiles can be parsed into molecules by rdkit
-    idx_rem  =[]
-    for i,sm in enumerate(smiles_1):
-        if Chem.MolFromSmiles(sm, sanitize=True) == None:
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        smiles_1.pop(idx)
-
-    idx_rem  =[]
-    for i,sm in enumerate(smiles_2):
-        if Chem.MolFromSmiles(sm, sanitize=True) == None:
-            idx_rem.append()
-    
-    for idx in (idx_rem):
-        smiles_2.pop(idx)
-    
-    
-    prediction_logP_1 = evaluate_property('', smiles_1, 'logP')
-    prediction_mw_1 = evaluate_property('', smiles_1, 'mw')
-    
-    print(len(prediction_mw_1))
-    print(len(prediction_logP_1))
-    idx_rem = []
-    for i in range(len(prediction_logP_1)):
-        if prediction_logP_1[i] == 'NaN':
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        prediction_logP_1.pop(idx)
-        prediction_mw_1.pop(idx)
-    #prediction_logP = evaluate_property('', smiles, 'logP')
-
-    assert len(prediction_logP_1) == len(prediction_mw_1)
-    
-    prediction_logP_2 = evaluate_property('', smiles_2, 'logP')
-    prediction_mw_2 = evaluate_property('', smiles_2, 'mw')
-    idx_rem = []
-    for i in range(len(prediction_logP_2)):
-        if prediction_logP_2[i] == 'NaN':
-            idx_rem.append(i)
-    
-    for idx in (idx_rem):
-        prediction_logP_2.pop(idx)
-        prediction_mw_2.pop(idx)
-    assert len(prediction_logP_2) == len(prediction_mw_2)
-    
-    #label = np.squeeze(np.concatenate((np.ones((1, len(prediction_QED_1))), 2*np.ones((1, len(prediction_QED_2)))), axis = 1))
-    label = ['Original Data' for i in range(len(prediction_logP_1))] + ['Generated Data' for i in range(len(prediction_logP_2))]
-    pred_mw = prediction_mw_1 + prediction_mw_2
-    pred_logP = prediction_logP_1 + prediction_logP_2
-    
-    d1 = {'Label':label, 'MW': pred_mw, 'LogP':pred_logP}
-    v1 = pd.DataFrame(d1)
-    sb.set_palette("YlGnBu")
-    ax = sb.relplot(data = v1, x = 'MW', y= 'LogP', hue = 'Label', palette = "YlGnBu_r", s=15)
-    #sb.relplot(prediction_sascore_2, prediction_QED_2, xlim = (0,10), ylim = (0,1), joint_kws={"s": 10})
-    
-    #ax.set_axis_labels('SA score', 'QED')
-    #legends = ['Original data', 'Generated data']
-    #plt.legend(loc='upper right', labels=legends)
-    # plt.xlim(0,10.0)
-    # plt.ylim(0,1.0)
-    plt.savefig('feedbackGAN_logP_vs_MW_multi.png')
-
-def eval_properties_to_csv(smiles, predictor):
-    
-    
-    header = ['SMILES', 'KOR pIC50', 'QED', 'LogP', 'SAscore', 'MW', 'Mean TD', 'Median TD']
-    
-    prediction_kor, _  = evaluate_property(predictor, smiles, 'kor')
-    prediction_QED = evaluate_property(predictor, smiles, 'qed')
-    prediction_logP = evaluate_property(predictor, smiles, 'logP')
-    prediction_sascore = evaluate_property(predictor, smiles, 'sascore')
-    prediction_mw = evaluate_property(predictor,smiles, 'mw')
-    
-    with open('properties.csv', 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow(header)
-        
-        for i, sm in enumerate(smiles):
-            # prediction_kor, _  = evaluate_property(predictor, [sm], 'kor')
-            # prediction_QED = evaluate_property(predictor, [sm], 'qed')
-            # prediction_logP = evaluate_property(predictor, [sm], 'logP')
-            # prediction_sascore = evaluate_property(predictor, [sm], 'sascore')
-            # prediction_mw = evaluate_property(predictor, [sm], 'mw')
-            avg_tanimoto_distance, median_tanimoto_distance = eval_tanimoto_distance(sm, smiles)
-            
-            data = [sm, str(np.round(prediction_kor[i], decimals = 2)), str(np.round(prediction_QED[i],decimals = 2)), str(np.round(prediction_logP[i],decimals = 2)), str(np.round(prediction_sascore[i], decimals =2)), str(np.round(prediction_mw[i], decimals =2)), str(np.round(avg_tanimoto_distance,decimals = 2)), str(np.round(avg_tanimoto_distance,decimals = 2))]
-            writer.writerow(data)
-        
-def eval_tanimoto_distance(sm, list_smiles):
-    """
-    Evaluates the average and median tanimoto distance between molecule A and every molecule
-
-    Parameters
-    ----------
-    sm :  String
-        SMILES string of molecule A
-    list_smiles : list
-        list with SMILES string of every molecule
-
-    Returns
-    -------
-    mean_td : average tanimoto distance
-    median_td : median of the tanimoto distance
-
-    """
-    
-    fps_mol_A = AllChem.GetMorganFingerprint(MolFromSmiles(sm), 3)
-    
-    fps = []
-    td = []
-    for i, smile in enumerate(list_smiles):
-        mol = MolFromSmiles(smile)
-        fps_mol_i = AllChem.GetMorganFingerprint(mol, 3)
-        ts = DataStructs.TanimotoSimilarity(fps_mol_A, fps_mol_i)
-        td.append(1-ts)
-    mean_td = np.mean(np.array(td))
-    median_td = np.median(np.array(td))
-    return mean_td, median_td
