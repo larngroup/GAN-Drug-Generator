@@ -127,7 +127,7 @@ gan.epoch = 0
 gan.autoencoder = autoencoder
 gan.vocab = vocab
 
-valid_smiles_before, perc_valid_before, _ = gan.sample_valid_data(10, run_folder, True)
+valid_smiles_before, perc_valid_before, _ = gan.sample_valid_data(1000, run_folder, True)
 predictions_before, _ = evaluate_property(predictor, valid_smiles_before, property_identifier)
 
 list_predictions_before=predictions_before.tolist()
@@ -138,14 +138,14 @@ with open(os.path.join(run_folder, "prediction_before.csv"), 'w') as f:
 
 print('start feedback gan..........................')
 
-n_to_generate = 20
+n_to_generate = 200
 threshold = 5
 info = 'max'
-epochs =1
+epochs =500
 
 gan.train_feedbackGAN(data, smiles_raw, batch_size, epochs, run_folder, autoencoder, vocab, predictor, n_to_generate, threshold, info, property_identifier, print_every_n_epochs = 50, critic_loops = 5)
 
-valid_smiles_after, perc_valid_after, _ = gan.sample_valid_data(10, run_folder, True)
+valid_smiles_after, perc_valid_after, _ = gan.sample_valid_data(1000, run_folder, True)
 predictions_after, _ = evaluate_property(predictor, valid_smiles_after, property_identifier)
 
 
